@@ -1,0 +1,24 @@
+{
+    "year" : 2013,
+    "title" : "Hunger Games: Catching Fire",
+    "info" : {
+      "directors" : [
+        "Francis Lawrence"
+      ],
+      "release_date" : "2013-11-22T00:00:00Z",
+      "rating" : 7.6,
+      "genres" : [
+        "Action",
+        "Adventure"
+      ],
+      "image_url" : "http://www.constellation-guide.com/wp-content/uploads/2013/05/Pinwheel-Galaxy-infrared-image.jpg",
+      "plot" : "Katniss Everdeen and Peeta Mellark become targets of the Capitol after their victory in the 74th Hunger Games sparks a rebellion in the Districts of Panem.",
+      "rank" : 1,
+      "running_time_secs" : 8760,
+      "actors" : [
+        "Jennifer Lawrence",
+        "Josh Hutcherson",
+        "Liam Hemsworth"
+      ]
+    }
+  }

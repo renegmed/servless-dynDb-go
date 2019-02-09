@@ -1,0 +1,9 @@
+This works
+
+Article: https://serverless.com/blog/dynamodb-backend-crudl-example-using-golang/
+
+Source code: https://github.com/nerdguru/go-sls-crudl
+
+POST https://xxxxxxxxxxxxxx.amazonaws.com/dev/movies
+
+GET POST https://xxxxxxxxxxxxxx.amazonaws.com/dev/movies/2013
