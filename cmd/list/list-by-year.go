@@ -16,6 +16,12 @@ type Response struct {
 func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// Make the call to the DAO with params found in the path
 	fmt.Println("Path vars: ", request.PathParameters["year"])
+
+	db, err := db.NewItemService()
+	if err != nil {
+		panic(fmt.Sprintf("List-By-Year: Failed to connect to table:\n %v", err))
+	}
+
 	items, err := db.ListByYear(request.PathParameters["year"])
 	if err != nil {
 		panic(fmt.Sprintf("Failed to find Item, %v", err))

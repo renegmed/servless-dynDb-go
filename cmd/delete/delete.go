@@ -22,8 +22,15 @@ func parseSlug(orig string) (retval string) {
 
 func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// Make the call to the DAO with params found in the path
-	fmt.Println("Path vars: ", request.PathParameters["year"], " ", parseSlug(request.PathParameters["title"]))
-	err := db.Delete(request.PathParameters["year"], parseSlug(request.PathParameters["title"]))
+	fmt.Println("Path vars: ", request.PathParameters["id"])
+
+	db, err := db.NewItemService()
+	if err != nil {
+		panic(fmt.Sprintf("Delete: Failed to connect to table:\n %v", err))
+	}
+
+	//err = db.Delete(request.PathParameters["year"], parseSlug(request.PathParameters["title"]))
+	_, err = db.Delete(request.PathParameters["id"])
 	if err != nil {
 		panic(fmt.Sprintf("Failed to find Item, %v", err))
 	}

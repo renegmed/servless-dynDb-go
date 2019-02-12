@@ -23,20 +23,26 @@ func parseSlug(orig string) (retval string) {
 
 func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// Make the call to the DAO with params found in the path
-	fmt.Println("Path vars: ", request.PathParameters["year"], " ", parseSlug(request.PathParameters["title"]))
-	item, err := db.GetByYearTitle(request.PathParameters["year"], parseSlug(request.PathParameters["title"]))
+	fmt.Println("Path vars: ", request.PathParameters["title"])
+
+	db, err := db.NewItemService()
+	if err != nil {
+		panic(fmt.Sprintf("Get: Failed to connect to table:\n %v", err))
+	}
+
+	items, err := db.GetByTitle(request.PathParameters["title"])
 	if err != nil {
 		panic(fmt.Sprintf("Failed to find Item, %v", err))
 	}
 
 	// Make sure the Item isn't empty
-	if item.Year <= 0 {
+	if len(items) > 0 {
 		fmt.Println("Could not find movie")
 		return events.APIGatewayProxyResponse{Body: request.Body, StatusCode: 500}, nil
 	}
 
 	// Log and return result
-	jsonItem, _ := json.Marshal(item)
+	jsonItem, _ := json.Marshal(items)
 	stringItem := string(jsonItem) + "\n"
 	fmt.Println("Found item: ", stringItem)
 	return events.APIGatewayProxyResponse{Body: stringItem, StatusCode: 200}, nil

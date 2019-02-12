@@ -4,14 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"github.com/guregu/dynamo"
+	"github.com/satori/go.uuid"
 )
 
 // ItemInfo has more data for our movie item
@@ -22,107 +20,63 @@ type ItemInfo struct {
 
 // Item has fields for the DynamoDB keys (Year and Title) and an ItemInfo for more data
 type Item struct {
-	Year  int      `json:"year"`
-	Title string   `json:"title"`
-	Info  ItemInfo `json:"info"`
+	ID           string   `json:"id" dynamo:"ID,hash"`
+	Title        string   `json:"title" dynamo:"Title"`
+	YearReleased int      `json:"yearReleased" dynamo:"YearReleased"`
+	Info         ItemInfo `json:"info" dynamo:"Info"`
 }
 
-// GetByYearTitle wraps up the DynamoDB calls to fetch a specific Item
-// Based on https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/dynamodb/read_item.go
-func GetByYearTitle(year, title string) (Item, error) {
-	// Build the Dynamo client object
-	sess := session.Must(session.NewSession())
-	svc := dynamodb.New(sess)
-	item := Item{}
-
-	// Perform the query
-	fmt.Println("Trying to read from table: ", os.Getenv("TABLE_NAME"))
-	result, err := svc.GetItem(&dynamodb.GetItemInput{
-		TableName: aws.String(os.Getenv("TABLE_NAME")),
-		Key: map[string]*dynamodb.AttributeValue{
-			"year": {
-				N: aws.String(year),
-			},
-			"title": {
-				S: aws.String(title),
-			},
-		},
-	})
-	if err != nil {
-		fmt.Println(err.Error())
-		return item, err
-	}
-
-	// Unmarshall the result in to an Item
-	err = dynamodbattribute.UnmarshalMap(result.Item, &item)
-	if err != nil {
-		fmt.Println(err.Error())
-		return item, err
-	}
-
-	return item, nil
+// MoviesService holds out dynamo client
+type ItemService struct {
+	Table dynamo.Table
 }
 
-// ListByYear wraps up the DynamoDB calls to list all items of a particular year
-// Based on https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/dynamodb/scan_items.go
-func ListByYear(year string) ([]Item, error) {
-	// Build the Dynamo client object
+// NewItemService creates a new item service with a dynamo client setup to talk to the provided table name
+func NewItemService() (*ItemService, error) {
+	dynamoTable, err := NewDynamoTable(os.Getenv("TABLE_NAME"), "")
+	if err != nil {
+		return nil, err
+	}
+	return &ItemService{
+		Table: dynamoTable,
+	}, nil
+}
+
+func NewDynamoTable(tableName, endpoint string) (dynamo.Table, error) {
+	if tableName == "" {
+		return dynamo.Table{}, fmt.Errorf("you must supply a table name")
+	}
+	cfg := aws.Config{}
+	if endpoint != "" {
+		cfg.Region = aws.String("us-east-1")
+		cfg.Endpoint = aws.String(endpoint)
+	}
+
 	sess := session.Must(session.NewSession())
-	svc := dynamodb.New(sess)
-	items := []Item{}
+	db := dynamo.New(sess, &cfg)
+	table := db.Table(tableName)
+	return table, nil
+}
 
-	// Create the Expression to fill the input struct with.
-	yearAsInt, err := strconv.Atoi(year)
-	filt := expression.Name("year").Equal(expression.Value(yearAsInt))
+func (i *ItemService) GetById(id string) (Item, error) {
+	var result Item
 
-	// Get back the title, year, and rating
-	proj := expression.NamesList(expression.Name("title"), expression.Name("year"))
-
-	expr, err := expression.NewBuilder().WithFilter(filt).WithProjection(proj).Build()
+	err := i.Table.Get("ID", id).Consistent(true).One(&result)
 
 	if err != nil {
-		fmt.Println("Got error building expression:")
 		fmt.Println(err.Error())
-		return items, err
+		return result, err
 	}
 
-	// Build the query input parameters
-	params := &dynamodb.ScanInput{
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		FilterExpression:          expr.Filter(),
-		ProjectionExpression:      expr.Projection(),
-		TableName:                 aws.String(os.Getenv("TABLE_NAME")),
-	}
+	return result, nil
+}
 
-	// Make the DynamoDB Query API call
-	result, err := svc.Scan(params)
-	fmt.Println("Result", result)
+func (i *ItemService) GetByTitle(title string) ([]Item, error) {
+	var items []Item
 
-	if err != nil {
-		fmt.Println("Query API call failed:")
-		fmt.Println((err.Error()))
-		return items, err
-	}
-
-	numItems := 0
-	for _, i := range result.Items {
-		item := Item{}
-
-		err = dynamodbattribute.UnmarshalMap(i, &item)
-
-		if err != nil {
-			fmt.Println("Got error unmarshalling:")
-			fmt.Println(err.Error())
-			return items, err
-		}
-
-		fmt.Println("Title: ", item.Title)
-		items = append(items, item)
-		numItems++
-	}
-
-	fmt.Println("Found", numItems, "movie(s) in year ", year)
+	//err := i.Table.Get("YearReleased", yearAsInt).Consistent(true).Filter("Title = ?", title).One(&result)
+	//err := i.Table.Get("Title", title).Consistent(true).One(&result)
+	err := i.Table.Scan().Filter("Title = ?", title).All(&items)
 	if err != nil {
 		fmt.Println(err.Error())
 		return items, err
@@ -131,111 +85,81 @@ func ListByYear(year string) ([]Item, error) {
 	return items, nil
 }
 
-// Post extracts the Item JSON and writes it to DynamoDB
-// Based on https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/dynamodb/create_item.go
-func Post(body string) (Item, error) {
-	// Create the dynamo client object
-	sess := session.Must(session.NewSession())
-	svc := dynamodb.New(sess)
+func (i *ItemService) ListByYear(year string) ([]Item, error) {
 
-	// Marshall the requrest body
+	yearAsInt, _ := strconv.Atoi(year)
+
+	var items []Item
+	err := i.Table.Scan().Filter("'YearReleased' = ?", yearAsInt).All(&items)
+	if err != nil {
+		fmt.Println(err.Error())
+		return nil, err
+	}
+	return items, nil
+}
+
+func (i *ItemService) Post(body string) (Item, error) {
+
 	var thisItem Item
 	json.Unmarshal([]byte(body), &thisItem)
 
-	// Take out non-alphanumberic except space characters from the title for easier slug building on reads
-	reg, err := regexp.Compile("[^a-zA-Z0-9\\s]+")
-	thisItem.Title = reg.ReplaceAllString(thisItem.Title, "")
-	fmt.Println("Item to add:", thisItem)
-
-	// Marshall the Item into a Map DynamoDB can deal with
-	av, err := dynamodbattribute.MarshalMap(thisItem)
+	id, err := uuid.NewV4()
 	if err != nil {
-		fmt.Println("Got error marshalling map:")
-		fmt.Println(err.Error())
 		return thisItem, err
 	}
-
-	// Create Item in table and return
-	input := &dynamodb.PutItemInput{
-		Item:      av,
-		TableName: aws.String(os.Getenv("TABLE_NAME")),
-	}
-	_, err = svc.PutItem(input)
-	return thisItem, err
-
+	thisItem.ID = id.String()
+	i.Table.Put(thisItem).Run()
+	return thisItem, nil
 }
 
-// Delete wraps up the DynamoDB calls to delete a specific Item
-// Based on https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/dynamodb/delete_item.go
-func Delete(year, title string) error {
-	// Build the Dynamo client object
-	sess := session.Must(session.NewSession())
-	svc := dynamodb.New(sess)
+func (i *ItemService) Delete(id string) (Item, error) {
 
-	// Perform the delete
-	input := &dynamodb.DeleteItemInput{
-		Key: map[string]*dynamodb.AttributeValue{
-			"year": {
-				N: aws.String(year),
-			},
-			"title": {
-				S: aws.String(title),
-			},
-		},
-		TableName: aws.String(os.Getenv("TABLE_NAME")),
-	}
+	var oldItem Item
 
-	_, err := svc.DeleteItem(input)
+	err := i.Table.Delete("ID", id).OldValue(&oldItem)
 	if err != nil {
 		fmt.Println(err.Error())
-		return err
+		return oldItem, err
 	}
-	return nil
+	return oldItem, nil
 }
 
-// Put extracts the Item JSON and updates it in DynamoDB
-// Based on https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/dynamodb/update_item.go
-func Put(body string) (Item, error) {
-	// Create the dynamo client object
-	sess := session.Must(session.NewSession())
-	svc := dynamodb.New(sess)
+// This doesn't work
+//    ConditionalCheckFailedException: The conditional request failed
+func (i *ItemService) DeleteByYearTitle(year, title string) (Item, error) {
 
-	// Marshall the requrest body
-	var thisItem Item
-	json.Unmarshal([]byte(body), &thisItem)
+	yearAsInt, _ := strconv.Atoi(year)
+	var oldItem Item
 
-	// Take out non-alphanumberic except space characters from the title for easier slug building on reads
-	reg, err := regexp.Compile("[^a-zA-Z0-9\\s]+")
-	thisItem.Title = reg.ReplaceAllString(thisItem.Title, "")
-	fmt.Println("Item to update:", thisItem)
+	err := i.Table.Delete("ID", "*").
+		If("YearReleased = ? AND Title = ?", yearAsInt, title).
+		OldValue(&oldItem)
 
-	// Update Item in table and return
-	input := &dynamodb.UpdateItemInput{
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":r": {
-				N: aws.String(strconv.FormatFloat(thisItem.Info.Rating, 'f', 1, 64)),
-			},
-			":p": {
-				S: aws.String(thisItem.Info.Plot),
-			},
-		},
-		TableName: aws.String(os.Getenv("TABLE_NAME")),
-		Key: map[string]*dynamodb.AttributeValue{
-			"year": {
-				N: aws.String(strconv.Itoa(thisItem.Year)),
-			},
-			"title": {
-				S: aws.String(thisItem.Title),
-			},
-		},
-		ReturnValues:     aws.String("UPDATED_NEW"),
-		UpdateExpression: aws.String("set info.rating = :r, info.plot = :p"),
-	}
-
-	_, err = svc.UpdateItem(input)
 	if err != nil {
 		fmt.Println(err.Error())
+		return oldItem, err
 	}
-	return thisItem, err
 
+	fmt.Printf("++++++Old Item deleted: \n   %v \n", oldItem)
+
+	return oldItem, nil
+}
+
+func (i *ItemService) Put(newItem Item) (Item, error) {
+
+	var oldItem Item
+	var cc dynamo.ConsumedCapacity
+	err := i.Table.Put(newItem).ConsumedCapacity(&cc).OldValue(&oldItem)
+
+	// check for putting the same item: this should fail
+	// err := i.Table.Put(newItem).If("attribute_not_exists(Title)").Run()
+	if err != nil {
+		return oldItem, err
+	}
+
+	if cc.Total != 1 || cc.Table != 1 { //|| cc.TableName != testTable {
+		return oldItem, fmt.Errorf("bad consumed capacity: %#v", cc)
+	}
+
+	return oldItem, nil
 }

@@ -28,13 +28,13 @@ functions:
     handler: bin/list-by-year
     events:
       - http:
-          path: movies/{year}
+          path: movies/year/{year}
           method: get
   get:
     handler: bin/get
     events:
       - http:
-          path: movies/{year}/{title}
+          path: movies/id/{id}
           method: get
   post:
     handler: bin/post
@@ -46,7 +46,7 @@ functions:
     handler: bin/delete
     events:
       - http:
-          path: movies/{year}/{title}
+          path: movies/{id}
           method: delete
   put:
     handler: bin/put
@@ -57,20 +57,16 @@ functions:
 
 resources:
   Resources:
-    GoCrudDynamoDbTable:
+    MoviesDynamoDbTable:
       Type: 'AWS::DynamoDB::Table'
       DeletionPolicy: Retain
       Properties:
         AttributeDefinitions:
-          - AttributeName: year
-            AttributeType: N
-          - AttributeName: title
-            AttributeType: S
+          - AttributeName: ID
+            AttributeType: S 
         KeySchema:
-          - AttributeName: year
-            KeyType: HASH
-          - AttributeName: title
-            KeyType: RANGE
+          - AttributeName: ID
+            KeyType: HASH 
         ProvisionedThroughput:
           ReadCapacityUnits: 1
           WriteCapacityUnits: 1

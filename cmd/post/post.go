@@ -11,6 +11,12 @@ import (
 func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// Log body and pass to the DAO
 	fmt.Println("Received body: ", request.Body)
+
+	db, err := db.NewItemService()
+	if err != nil {
+		panic(fmt.Sprintf("Post: Failed to connect to table:\n %v", err))
+	}
+
 	item, err := db.Post(request.Body)
 	if err != nil {
 		fmt.Println("Got error calling post")

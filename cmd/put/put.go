@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"serverless-movies-pjohnson/db"
 
@@ -11,7 +12,16 @@ import (
 func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	// Log body and pass to the DAO
 	fmt.Println("Received body: ", request.Body)
-	item, err := db.Put(request.Body)
+
+	var item db.Item
+	json.Unmarshal([]byte(request.Body), &item)
+
+	db, err := db.NewItemService()
+	if err != nil {
+		panic(fmt.Sprintf("Put: Failed to connect to table:\n %v", err))
+	}
+
+	updatedItem, err := db.Put(item)
 	if err != nil {
 		fmt.Println("Got error calling put")
 		fmt.Println(err.Error())
@@ -19,7 +29,7 @@ func Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 
 	// Log and return result
-	fmt.Println("Updated item:  ", item)
+	fmt.Printf("Updated item: %v \n ", updatedItem)
 	return events.APIGatewayProxyResponse{Body: "Success\n", StatusCode: 200}, nil
 }
 
